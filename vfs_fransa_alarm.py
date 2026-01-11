@@ -78,7 +78,7 @@ def telegram_mesaj_gonder(mesaj):
     return False
 
 def randevu_kontrol_sehir(sehir_adi, url):
-    """Bir şehir için randevu kontrolü yap"""
+    """Bir şehir için randevu kontrolü yap - None döner ise kontrol yapılamadı"""
     try:
         # Session kullan - daha gerçekçi tarayıcı davranışı
         session = requests.Session()
@@ -110,37 +110,49 @@ def randevu_kontrol_sehir(sehir_adi, url):
         return randevu_var
         
     except requests.exceptions.Timeout:
-        logger.warning(f"⏱️ {sehir_adi} - Zaman aşımı")
-        return False
+        logger.warning(f"⏱️ {sehir_adi} - Zaman aşımı (kontrol yapılamadı)")
+        return None  # Kontrol yapılamadı
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 403:
-            logger.warning(f"🔒 {sehir_adi} - Site bot koruması aktif (403)")
+            logger.warning(f"🔒 {sehir_adi} - Bot koruması aktif (kontrol yapılamadı)")
         else:
             logger.error(f"🌐 {sehir_adi} - HTTP hatası: {e}")
-        return False
+        return None  # Kontrol yapılamadı
     except requests.exceptions.RequestException as e:
         logger.error(f"🌐 {sehir_adi} - Bağlantı hatası: {e}")
-        return False
+        return None  # Kontrol yapılamadı
     except Exception as e:
         logger.error(f"❌ {sehir_adi} - Beklenmeyen hata: {e}")
-        return False
+        return None  # Kontrol yapılamadı
 
 def tum_sehirleri_kontrol():
-    """Tüm şehirleri kontrol et"""
+    """Tüm şehirleri kontrol et - Sadece başarılı kontrolleri bildir"""
     randevu_bulunan_sehirler = []
+    basarisiz_kontrol_sayisi = 0
     
     for sehir, url in SEHIRLER.items():
         logger.info(f"🔍 {sehir} kontrol ediliyor...")
         
-        randevu_var = randevu_kontrol_sehir(sehir, url)
+        sonuc = randevu_kontrol_sehir(sehir, url)
         
-        if randevu_var:
+        if sonuc is None:
+            # Kontrol yapılamadı - saymıyoruz
+            basarisiz_kontrol_sayisi += 1
+            logger.warning(f"⚠️ {sehir} kontrol yapılamadı (bot koruması veya hata)")
+        elif sonuc is True:
+            # GERÇEKTEN randevu var!
             randevu_bulunan_sehirler.append(sehir)
             logger.info(f"✅ {sehir}'da RANDEVU VAR!")
         else:
+            # Randevu yok
             logger.info(f"⏳ {sehir}'da randevu yok")
         
-        time.sleep(3)  # Şehirler arası bekleme - sunucuya yük vermemek için
+        time.sleep(3)  # Şehirler arası bekleme
+    
+    # Eğer tüm şehirler kontrol yapılamadıysa, boş liste döndür (bildirim gönderme)
+    if basarisiz_kontrol_sayisi == len(SEHIRLER):
+        logger.warning("⚠️ Hiçbir şehir kontrol edilemedi - VFS sitesi bot koruması kullanıyor olabilir")
+        return []
     
     return randevu_bulunan_sehirler
 
