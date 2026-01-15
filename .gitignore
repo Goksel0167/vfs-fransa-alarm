@@ -1,0 +1,5 @@
+vfs_alarm.log
+__pycache__/
+*.pyc
+*.pyo
+.env
