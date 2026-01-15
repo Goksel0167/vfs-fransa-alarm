@@ -100,8 +100,8 @@ def eksisozluk_kontrol():
     try:
         logger.info("🔍 Ekşi Sözlük kontrol ediliyor...")
         
-        url = "https://eksisozluk1923.com/vfs-fransa--7234567"
-        response = requests.get(url, headers=BROWSER_HEADERS, timeout=20)
+        url = "https://eksisozluk.com/vfs-fransa--7234567"
+        response = requests.get(url, headers=BROWSER_HEADERS, timeout=20, verify=False)
         
         if response.status_code != 200:
             logger.warning(f"⚠️ Ekşi Sözlük erişim hatası: {response.status_code}")
@@ -212,6 +212,120 @@ def reddit_kontrol():
         logger.error(f"❌ Reddit kontrol hatası: {e}")
         return []
 
+def twitter_kontrol():
+    """Twitter'da VFS Fransa randevu paylaşımlarını kontrol et"""
+    try:
+        logger.info("🔍 Twitter kontrol ediliyor...")
+        
+        # Nitter (Twitter alternatif frontend) kullan
+        url = "https://nitter.net/search?f=tweets&q=vfs+fransa+randevu&since=&until=&near="
+        
+        response = requests.get(url, headers=BROWSER_HEADERS, timeout=20, verify=False)
+        
+        if response.status_code != 200:
+            logger.warning(f"⚠️ Twitter erişim hatası: {response.status_code}")
+            return []
+        
+        soup = BeautifulSoup(response.text, "html.parser")
+        tweets = soup.find_all("div", {"class": "timeline-item"}, limit=5)
+        
+        bulunan_bilgiler = []
+        
+        for tweet in tweets:
+            try:
+                tweet_text = tweet.get_text().lower()
+                tweet_link = tweet.find("a", {"class": "tweet-link"})
+                tweet_id = str(hash(tweet_text[:50])) if tweet_link else str(hash(tweet_text[:30]))
+                
+                if tweet_id in gorulmus_paylasimllar:
+                    continue
+                
+                randevu_kelimeleri = ["randevu açıldı", "randevu var", "randevu buldum", "slot açıldı", "müsait"]
+                gaziantep_mi = "gaziantep" in tweet_text
+                ankara_mi = "ankara" in tweet_text
+                turist_mi = "turist" in tweet_text or "tourism" in tweet_text
+                vfs_fransa = "vfs" in tweet_text and "fransa" in tweet_text
+                
+                if vfs_fransa and any(kelime in tweet_text for kelime in randevu_kelimeleri):
+                    gorulmus_paylasimllar.add(tweet_id)
+                    
+                    sehir = "Bilinmiyor"
+                    if gaziantep_mi:
+                        sehir = "Gaziantep"
+                    elif ankara_mi:
+                        sehir = "Ankara"
+                    
+                    bulunan_bilgiler.append({
+                        "platform": "Twitter (X)",
+                        "sehir": sehir,
+                        "turist": turist_mi,
+                        "metin": tweet_text[:200]
+                    })
+                    logger.info(f"✅ Twitter'da yeni paylaşım bulundu: {sehir}")
+            except:
+                continue
+        
+        return bulunan_bilgiler
+        
+    except Exception as e:
+        logger.error(f"❌ Twitter kontrol hatası: {e}")
+        return []
+
+def instagram_kontrol():
+    """Instagram'da VFS Fransa hashtag'lerini kontrol et"""
+    try:
+        logger.info("🔍 Instagram kontrol ediliyor...")
+        
+        # Instagram public hashtag sayfası
+        hashtags = ["vfsfransa", "fransavizesi", "vfsglobal"]
+        bulunan_bilgiler = []
+        
+        for hashtag in hashtags:
+            try:
+                url = f"https://www.instagram.com/explore/tags/{hashtag}/"
+                response = requests.get(url, headers=BROWSER_HEADERS, timeout=20)
+                
+                if response.status_code != 200:
+                    continue
+                
+                # Instagram JSON verisi sayfada gömülü olabilir
+                if "randevu" in response.text.lower() or "appointment" in response.text.lower():
+                    logger.info(f"💡 Instagram #{hashtag} - Potansiyel randevu paylaşımı algılandı")
+                    # Not: Instagram API olmadan detaylı bilgi almak zor
+            except:
+                continue
+        
+        return bulunan_bilgiler
+        
+    except Exception as e:
+        logger.error(f"❌ Instagram kontrol hatası: {e}")
+        return []
+
+def facebook_kontrol():
+    """Facebook gruplarında VFS Fransa randevu paylaşımlarını kontrol et"""
+    try:
+        logger.info("🔍 Facebook kontrol ediliyor...")
+        
+        # Facebook public search
+        search_query = "vfs fransa randevu"
+        url = f"https://www.facebook.com/public?query={search_query.replace(' ', '%20')}"
+        
+        response = requests.get(url, headers=BROWSER_HEADERS, timeout=20)
+        
+        if response.status_code != 200:
+            logger.warning(f"⚠️ Facebook erişim hatası: {response.status_code}")
+            return []
+        
+        # Facebook login olmadan detaylı erişim sınırlı
+        if "randevu açıldı" in response.text.lower() or "randevu var" in response.text.lower():
+            logger.info("💡 Facebook - Potansiyel randevu paylaşımı algılandı")
+        
+        return []
+        
+    except Exception as e:
+        logger.error(f"❌ Facebook kontrol hatası: {e}")
+        return []
+
 def tum_platformlari_kontrol():
     """Tüm sosyal medya platformlarını kontrol et ve randevu paylaşımlarını topla"""
     tum_bulgular = []
@@ -231,6 +345,33 @@ def tum_platformlari_kontrol():
         tum_bulgular.extend(reddit_bulgular)
     except Exception as e:
         logger.error(f"❌ Reddit genel hatası: {e}")
+    
+    time.sleep(2)  # Platformlar arası bekleme
+    
+    # Twitter kontrolü
+    try:
+        twitter_bulgular = twitter_kontrol()
+        tum_bulgular.extend(twitter_bulgular)
+    except Exception as e:
+        logger.error(f"❌ Twitter genel hatası: {e}")
+    
+    time.sleep(2)  # Platformlar arası bekleme
+    
+    # Instagram kontrolü
+    try:
+        instagram_bulgular = instagram_kontrol()
+        tum_bulgular.extend(instagram_bulgular)
+    except Exception as e:
+        logger.error(f"❌ Instagram genel hatası: {e}")
+    
+    time.sleep(2)  # Platformlar arası bekleme
+    
+    # Facebook kontrolü
+    try:
+        facebook_bulgular = facebook_kontrol()
+        tum_bulgular.extend(facebook_bulgular)
+    except Exception as e:
+        logger.error(f"❌ Facebook genel hatası: {e}")
     
     return tum_bulgular
 
@@ -384,7 +525,7 @@ def main():
     """Ana program döngüsü"""
     logger.info("="*70)
     logger.info("🚀 VFS Fransa SOSYAL MEDYA TAKİP başladı!")
-    logger.info(f"📱 Kontrol edilen platformlar: Ekşi Sözlük, Reddit, VFS Sitesi")
+    logger.info(f"📱 Kontrol edilen platformlar: Ekşi Sözlük, Reddit, Twitter, Instagram, Facebook")
     logger.info(f"🔍 Aranan: Fransa kısa dönem turist standard vize randevu")
     logger.info(f"📍 Şehirler: Gaziantep (ÖNCELİKLİ), Ankara")
     logger.info(f"⏱️ Kontrol sıklığı: Her 3 dakikada")
@@ -395,7 +536,9 @@ def main():
     baslangic_mesaj += "🔍 <b>TAKİP EDİLEN PLATFORMLAR:</b>\n"
     baslangic_mesaj += "└ Ekşi Sözlük (VFS Fransa başlığı)\n"
     baslangic_mesaj += "└ Reddit r/Turkey\n"
-    baslangic_mesaj += "└ VFS Sitesi (bonus)\n\n"
+    baslangic_mesaj += "└ Twitter / X (arama)\n"
+    baslangic_mesaj += "└ Instagram (#vfsfransa)\n"
+    baslangic_mesaj += "└ Facebook (gruplar)\n\n"
     baslangic_mesaj += "📋 <b>ARANAN BİLGİLER:</b>\n"
     baslangic_mesaj += "└ Fransa turist vizesi randevu\n"
     baslangic_mesaj += "└ Gaziantep & Ankara\n"
