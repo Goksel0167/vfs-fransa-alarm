@@ -212,6 +212,28 @@ def reddit_kontrol():
         logger.error(f"❌ Reddit kontrol hatası: {e}")
         return []
 
+def tum_platformlari_kontrol():
+    """Tüm sosyal medya platformlarını kontrol et ve randevu paylaşımlarını topla"""
+    tum_bulgular = []
+    
+    # Ekşi Sözlük kontrolü
+    try:
+        eksisozluk_bulgular = eksisozluk_kontrol()
+        tum_bulgular.extend(eksisozluk_bulgular)
+    except Exception as e:
+        logger.error(f"❌ Ekşi Sözlük genel hatası: {e}")
+    
+    time.sleep(2)  # Platformlar arası bekleme
+    
+    # Reddit kontrolü
+    try:
+        reddit_bulgular = reddit_kontrol()
+        tum_bulgular.extend(reddit_bulgular)
+    except Exception as e:
+        logger.error(f"❌ Reddit genel hatası: {e}")
+    
+    return tum_bulgular
+
 def randevu_kontrol_sehir(sehir_adi, url):
     """Bir şehir için randevu kontrolü yap - SADECE kesin randevu varsa True döner"""
     try:
