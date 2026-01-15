@@ -27,16 +27,25 @@ if not BOT_TOKEN or not CHAT_ID:
     logger.error("Railway.app'te Variables bölümünden bu değerleri ekleyin.")
     sys.exit(1)
 
-# 🎯 Tüm Türkiye şehirleri için VFS Fransa URL'leri
-# Gaziantep ÖNCELİKLİ (Adana'ya en yakın)
+# 🎯 VFS Fransa Başvuru Detayları
 VFS_BASE_URL = "https://visa.vfsglobal.com/tur/tr/fra"
+
+# ✅ Sadece Ankara ve Gaziantep (Gaziantep ÖNCELİKLİ)
+# 📋 Başvuru Kategorisi: Kısa dönem - Short term
+# 🎯 Alt Kategori: Tourism - Premiere demande, Standard
 SEHIRLER = {
-    "Gaziantep": f"{VFS_BASE_URL}/book-an-appointment",  # ÖNCELİKLİ
-    "İstanbul": f"{VFS_BASE_URL}/book-an-appointment",
-    "Ankara": f"{VFS_BASE_URL}/book-an-appointment",
-    "İzmir": f"{VFS_BASE_URL}/book-an-appointment",
-    "Antalya": f"{VFS_BASE_URL}/book-an-appointment",
-    "Bursa": f"{VFS_BASE_URL}/book-an-appointment"
+    "Gaziantep": {
+        "url": f"{VFS_BASE_URL}/book-an-appointment",
+        "kategori": "Kısa dönem - Short term",
+        "alt_kategori": "Tourism - Premiere demande / Standard",
+        "oncelik": 1  # En yüksek öncelik
+    },
+    "Ankara": {
+        "url": f"{VFS_BASE_URL}/book-an-appointment",
+        "kategori": "Kısa dönem - Short term", 
+        "alt_kategori": "Tourism - Premiere demande / Standard",
+        "oncelik": 2
+    }
 }
 
 # Daha gerçekçi tarayıcı başlıkları
@@ -130,18 +139,28 @@ def tum_sehirleri_kontrol():
     randevu_bulunan_sehirler = []
     basarisiz_kontrol_sayisi = 0
     
-    for sehir, url in SEHIRLER.items():
+    # Şehirleri öncelik sırasına göre sırala
+    sirali_sehirler = sorted(SEHIRLER.items(), key=lambda x: x[1]["oncelik"])
+    
+    for sehir, bilgi in sirali_sehirler:
         logger.info(f"🔍 {sehir} kontrol ediliyor...")
+        logger.info(f"   📋 Kategori: {bilgi['kategori']}")
+        logger.info(f"   🎯 Alt Kategori: {bilgi['alt_kategori']}")
         
-        sonuc = randevu_kontrol_sehir(sehir, url)
+        sonuc = randevu_kontrol_sehir(sehir, bilgi["url"])
         
         if sonuc is None:
-            # Kontrol yapılamadı - saymıyoruz
+            # Kontrol yapılamadı
             basarisiz_kontrol_sayisi += 1
             logger.warning(f"⚠️ {sehir} kontrol yapılamadı (bot koruması veya hata)")
         elif sonuc is True:
             # GERÇEKTEN randevu var!
-            randevu_bulunan_sehirler.append(sehir)
+            randevu_bulunan_sehirler.append({
+                "sehir": sehir,
+                "kategori": bilgi["kategori"],
+                "alt_kategori": bilgi["alt_kategori"],
+                "oncelik": bilgi["oncelik"]
+            })
             logger.info(f"✅ {sehir}'da RANDEVU VAR!")
         else:
             # Randevu yok
@@ -149,7 +168,7 @@ def tum_sehirleri_kontrol():
         
         time.sleep(3)  # Şehirler arası bekleme
     
-    # Eğer tüm şehirler kontrol yapılamadıysa, boş liste döndür (bildirim gönderme)
+    # Eğer tüm şehirler kontrol yapılamadıysa, boş liste döndür
     if basarisiz_kontrol_sayisi == len(SEHIRLER):
         logger.warning("⚠️ Hiçbir şehir kontrol edilemedi - VFS sitesi bot koruması kullanıyor olabilir")
         return []
@@ -159,13 +178,22 @@ def tum_sehirleri_kontrol():
 def main():
     """Ana program döngüsü"""
     logger.info("="*70)
-    logger.info("🚀 VFS Fransa TÜRKİYE çapında randevu takip başladı!")
-    logger.info(f"📍 Kontrol edilen şehirler: {', '.join(SEHIRLER.keys())}")
+    logger.info("🚀 VFS Fransa randevu takip başladı!")
+    logger.info(f"📍 Kontrol edilen merkezler: Gaziantep (ÖNCELİKLİ), Ankara")
+    logger.info(f"📋 Başvuru kategorisi: Kısa dönem - Short term")
+    logger.info(f"🎯 Alt kategori: Tourism - Premiere demande / Standard")
     logger.info(f"⏱️ Kontrol sıklığı: 5 dakika")
     logger.info("="*70)
     
     # Başlangıç bildirimi
-    telegram_mesaj_gonder("✅ Bot başlatıldı! VFS Fransa randevu takibi aktif.")
+    baslangic_mesaj = "✅ <b>Bot başlatıldı!</b>\n\n"
+    baslangic_mesaj += "📋 <b>KONTROL DETAYLARI:</b>\n"
+    baslangic_mesaj += "└ Merkezler: Gaziantep (ÖNCELİKLİ), Ankara\n"
+    baslangic_mesaj += "└ Kategori: Kısa dönem - Short term\n"
+    baslangic_mesaj += "└ Alt Kategori: Tourism - Premiere demande / Standard\n"
+    baslangic_mesaj += "└ Kontrol: Her 5 dakikada\n\n"
+    baslangic_mesaj += "🔔 Randevu açıldığında hemen bildirim alacaksınız!"
+    telegram_mesaj_gonder(baslangic_mesaj)
     
     hata_sayaci = 0
     max_hata = 5
@@ -177,25 +205,32 @@ def main():
             randevu_bulunan = tum_sehirleri_kontrol()
             
             if randevu_bulunan:
-                # Gaziantep öncelikli bildirim
-                if "Gaziantep" in randevu_bulunan:
+                # Öncelik sırasına göre mesaj oluştur
+                randevu_bulunan_sirali = sorted(randevu_bulunan, key=lambda x: x["oncelik"])
+                
+                # En öncelikli şehir
+                en_oncelikli = randevu_bulunan_sirali[0]
+                
+                if en_oncelikli["sehir"] == "Gaziantep":
                     mesaj = "🔥 <b>ACİL! GAZİANTEP'TE RANDEVU VAR!</b> 🔥\n\n"
-                    mesaj += "📍 <b>Adana'ya en yakın şehir!</b>\n"
-                    mesaj += "✅ Gaziantep\n\n"
-                    
-                    if len(randevu_bulunan) > 1:
-                        mesaj += "<b>Diğer şehirler:</b>\n"
-                        for sehir in randevu_bulunan:
-                            if sehir != "Gaziantep":
-                                mesaj += f"✅ {sehir}\n"
-                    
-                    mesaj += "\n🔗 HEMEN BAŞVUR: https://visa.vfsglobal.com/tur/tr/fra/"
+                    mesaj += "📍 <b>Adana'ya en yakın şehir!</b>\n\n"
                 else:
                     mesaj = "🚨 <b>FRANSA VFS RANDEVU AÇILDI!</b> 🚨\n\n"
-                    mesaj += "📍 <b>Randevu Bulunan Şehirler:</b>\n"
-                    for sehir in randevu_bulunan:
-                        mesaj += f"✅ {sehir}\n"
-                    mesaj += "\n🔗 Hemen başvur: https://visa.vfsglobal.com/tur/tr/fra/"
+                
+                # Randevu detaylarını ekle
+                mesaj += "📋 <b>BAŞVURU DETAYLARI:</b>\n"
+                mesaj += f"└ Kategori: {en_oncelikli['kategori']}\n"
+                mesaj += f"└ Alt Kategori: {en_oncelikli['alt_kategori']}\n\n"
+                
+                mesaj += "📍 <b>RANDEVU BULUNAN MERKEZLER:</b>\n"
+                for randevu in randevu_bulunan_sirali:
+                    if randevu["oncelik"] == 1:
+                        mesaj += f"✅ <b>{randevu['sehir']}</b> (ÖNCELİKLİ)\n"
+                    else:
+                        mesaj += f"✅ {randevu['sehir']}\n"
+                
+                mesaj += "\n🔗 <b>HEMEN BAŞVUR:</b>\n"
+                mesaj += "https://visa.vfsglobal.com/tur/tr/fra/"
                 
                 telegram_mesaj_gonder(mesaj)
                 logger.info("📱 Randevu bildirimi gönderildi!")
